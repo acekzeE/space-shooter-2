@@ -110,16 +110,6 @@ class GamepadManager {
         };
     }
 
-    vibrate(playerIndex, intensity = 1.0, duration = 200) {
-        if (this.gamepads[playerIndex] && this.gamepads[playerIndex].vibrationActuator) {
-            this.gamepads[playerIndex].vibrationActuator.playEffect('dual-rumble', {
-                startDelay: 0,
-                duration: duration,
-                weakMagnitude: intensity * 0.5,
-                strongMagnitude: intensity
-            });
-        }
-    }
 }
 
 class SpaceTetrisShooter extends Phaser.Scene {
@@ -990,11 +980,6 @@ class SpaceTetrisShooter extends Phaser.Scene {
     }
 
     hitEnemy(bullet, enemy) {
-        // Add vibration feedback for successful hits
-        this.gamepadManager.vibrate(0, 0.3, 100); // Light vibration for P1
-        if (this.playerMode === 2) {
-            this.gamepadManager.vibrate(1, 0.3, 100); // Light vibration for P2
-        }
 
         // Comprehensive null and active checks
         if (!bullet || !enemy ||
@@ -1453,9 +1438,6 @@ class SpaceTetrisShooter extends Phaser.Scene {
         const isPlayer1 = player === this.player;
         const isPlayer2 = player === this.player2;
 
-        // Add strong vibration feedback for player hit
-        const gamepadIndex = isPlayer1 ? 0 : 1;
-        this.gamepadManager.vibrate(gamepadIndex, 1.0, 300); // Strong vibration for hit
 
         // Check which player's shield is active
         if (isPlayer1 && this.isShielded) return;
@@ -2193,9 +2175,6 @@ class SpaceTetrisShooter extends Phaser.Scene {
         // Determine which player collected the power-up
         const isPlayer1 = player === this.player;
 
-        // Add vibration feedback for power-up collection
-        const gamepadIndex = isPlayer1 ? 0 : 1;
-        this.gamepadManager.vibrate(gamepadIndex, 0.6, 200); // Medium vibration for power-up
 
         // Clear existing power-up timer for the specific player
         if (isPlayer1) {
