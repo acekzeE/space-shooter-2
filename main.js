@@ -43,13 +43,24 @@ class GamepadManager {
             if (gamepads[i]) {
                 this.gamepads[i] = gamepads[i];
 
-                // Update previous button states
+                // Initialize previous button states array if needed
                 if (!this.previousButtonStates[i]) {
                     this.previousButtonStates[i] = [];
+                    // Initialize with false values
+                    for (let j = 0; j < 16; j++) {
+                        this.previousButtonStates[i][j] = false;
+                    }
                 }
+            }
+        }
+    }
 
-                for (let j = 0; j < gamepads[i].buttons.length; j++) {
-                    this.previousButtonStates[i][j] = gamepads[i].buttons[j] ? gamepads[i].buttons[j].pressed : false;
+    // Call this at the end of each frame to update previous button states
+    updatePreviousButtonStates() {
+        for (let i = 0; i < this.gamepads.length; i++) {
+            if (this.gamepads[i] && this.previousButtonStates[i]) {
+                for (let j = 0; j < this.gamepads[i].buttons.length; j++) {
+                    this.previousButtonStates[i][j] = this.gamepads[i].buttons[j] ? this.gamepads[i].buttons[j].pressed : false;
                 }
             }
         }
@@ -118,6 +129,7 @@ class SpaceTetrisShooter extends Phaser.Scene {
         this.gamepadManager = new GamepadManager(); // Initialize gamepad manager
         this.menuSelectedIndex = 0; // For menu navigation
         this.upgradeSelectedIndex = 0; // For upgrade screen navigation
+        this.stickHeld = false; // Track stick held state for menu navigation
         this.powerUpActive = false;
         this.isDevelopmentMode = true; // Set to true for testing, false for production
         this.powerUpType = null; // 'spread', 'big', 'rapid', 'shield', 'double', 'speed', or 'life'
@@ -168,8 +180,22 @@ class SpaceTetrisShooter extends Phaser.Scene {
     }
 
     create() {
+        // Set up gamepad connection event listeners
+        this.setupGamepadEvents();
+
         // Show player selection screen
         this.showPlayerSelection();
+    }
+
+    setupGamepadEvents() {
+        // Listen for gamepad connection events
+        window.addEventListener('gamepadconnected', (event) => {
+            this.updateMenuSelection(); // Refresh controller status display
+        });
+
+        window.addEventListener('gamepaddisconnected', (event) => {
+            this.updateMenuSelection(); // Refresh controller status display
+        });
     }
     showPlayerSelection() {
         // Create background
@@ -224,10 +250,28 @@ class SpaceTetrisShooter extends Phaser.Scene {
         this.menuButtons = [this.button1P, this.button2P];
         this.menuSelectedIndex = 0; // Default to first button
 
-        // Add gamepad/controller indicators
-        this.gamepadStatus = this.add.text(400, 300, '', {
-            fontSize: '20px',
-            fill: '#00ff00'
+        // Add gamepad/controller indicators - P1 top left, P2 top right
+        this.p1GamepadStatus = this.add.text(20, 20, '', {
+            fontSize: '14px',
+            fill: '#00ff00',
+            backgroundColor: '#000',
+            padding: { x: 8, y: 4 }
+        }).setOrigin(0, 0);
+
+        this.p2GamepadStatus = this.add.text(780, 20, '', {
+            fontSize: '14px',
+            fill: '#00ffff',
+            backgroundColor: '#000',
+            padding: { x: 8, y: 4 }
+        }).setOrigin(1, 0);
+
+        // Add central navigation instructions
+        this.navigationStatus = this.add.text(400, 300, '', {
+            fontSize: '16px',
+            fill: '#ffffff',
+            backgroundColor: '#000',
+            padding: { x: 10, y: 5 },
+            align: 'center'
         }).setOrigin(0.5);
 
         // Make buttons interactive
@@ -251,9 +295,9 @@ class SpaceTetrisShooter extends Phaser.Scene {
         // Initialize selection visual
         this.updateMenuSelection();
 
-        // Set up input polling for menu
+        // Set up input polling for menu - increased frequency for better responsiveness
         this.menuUpdateEvent = this.time.addEvent({
-            delay: 100,
+            delay: 50, // Reduced from 100ms to 50ms for better responsiveness
             callback: this.updateMenuInput,
             callbackScope: this,
             loop: true
@@ -268,35 +312,80 @@ class SpaceTetrisShooter extends Phaser.Scene {
             this.menuButtons[this.menuSelectedIndex].setFillStyle(0x444444, 0.8);
         }
 
-        // Update gamepad status
-        let statusText = '';
+        // Update P1 gamepad status (top left)
         if (this.gamepadManager.isConnected(0)) {
-            statusText += 'Controller 1: Connected\n';
+            const gamepad = this.gamepadManager.gamepads[0];
+            const controllerType = this.getControllerType(gamepad.id);
+            this.p1GamepadStatus.setText(`P1: ${controllerType}\nConnected`);
+        } else {
+            this.p1GamepadStatus.setText('P1: No Controller');
         }
+
+        // Update P2 gamepad status (top right)
         if (this.gamepadManager.isConnected(1)) {
-            statusText += 'Controller 2: Connected\n';
+            const gamepad = this.gamepadManager.gamepads[1];
+            const controllerType = this.getControllerType(gamepad.id);
+            this.p2GamepadStatus.setText(`P2: ${controllerType}\nConnected`);
+        } else {
+            this.p2GamepadStatus.setText('P2: No Controller');
         }
-        if (statusText) {
-            statusText += 'Use D-Pad/Stick + A to navigate';
+
+        // Update navigation instructions
+        let instructions = '';
+        if (this.gamepadManager.isConnected(0) || this.gamepadManager.isConnected(1)) {
+            instructions = 'Use D-Pad/Stick to navigate\nA or Start to select';
         }
-        this.gamepadStatus.setText(statusText);
+        this.navigationStatus.setText(instructions);
+    }
+
+    getControllerType(gamepadId) {
+        const id = gamepadId.toLowerCase();
+        if (id.includes('xbox') || id.includes('xinput')) {
+            return 'Xbox Controller';
+        } else if (id.includes('playstation') || id.includes('ps4') || id.includes('ps5') || id.includes('dualshock') || id.includes('dualsense')) {
+            return 'PlayStation Controller';
+        } else if (id.includes('pro controller') || id.includes('nintendo')) {
+            return 'Nintendo Pro Controller';
+        } else {
+            return 'Generic Controller';
+        }
     }
 
     updateMenuInput() {
-        // Update gamepad state
-        this.gamepadManager.update();
+        // Gamepad state is updated in main update() loop
+
+        // Check if stick is being held on any controller (for proper stick navigation timing)
+        const stickThreshold = 0.7;
+        let currentStickHeld = false;
+
+        for (let gamepadIndex = 0; gamepadIndex < 2; gamepadIndex++) {
+            if (this.gamepadManager.isConnected(gamepadIndex)) {
+                const stick = this.gamepadManager.getLeftStick(gamepadIndex);
+                if (Math.abs(stick.x) > stickThreshold || Math.abs(stick.y) > stickThreshold) {
+                    currentStickHeld = true;
+                    break;
+                }
+            }
+        }
+
+        // Update stick held state
+        if (!currentStickHeld && this.stickHeld) {
+            this.stickHeld = false;
+        }
 
         // Handle navigation
         if (this.isMenuNavigationPressed('up')) {
             this.menuSelectedIndex = Math.max(0, this.menuSelectedIndex - 1);
             this.updateMenuSelection();
+            if (currentStickHeld) this.stickHeld = true;
         } else if (this.isMenuNavigationPressed('down')) {
             this.menuSelectedIndex = Math.min(this.menuButtons.length - 1, this.menuSelectedIndex + 1);
             this.updateMenuSelection();
+            if (currentStickHeld) this.stickHeld = true;
         }
 
-        // Handle selection
-        if (this.isMenuNavigationPressed('select')) {
+        // Handle selection - A button or Start button
+        if (this.isMenuNavigationPressed('select') || this.isMenuNavigationPressed('start')) {
             this.selectMenuOption(this.menuSelectedIndex);
         }
     }
@@ -773,6 +862,9 @@ class SpaceTetrisShooter extends Phaser.Scene {
             this.bullets.add(bullet);
             bullet.body.setVelocityY(-800);
         }
+
+        // Update previous button states at the end of each frame
+        this.gamepadManager.updatePreviousButtonStates();
     }
 
     spawnEnemy() {
@@ -2263,6 +2355,7 @@ class SpaceTetrisShooter extends Phaser.Scene {
         this.physics.pause();
         this.isPaused = true; // Set pause flag
         const rewardUIElements = []; // Array to hold UI elements for cleanup
+        this.currentUpgradeUIElements = rewardUIElements; // Store for gamepad navigation cleanup
         // Create semi-transparent background
         const bg = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.8);
         rewardUIElements.push(bg);
@@ -2446,6 +2539,10 @@ class SpaceTetrisShooter extends Phaser.Scene {
                     element.destroy();
                 }
             });
+
+            // Clear stored UI elements reference
+            this.currentUpgradeUIElements = null;
+
             // Resume game
             this.physics.resume();
             this.isPaused = false; // Unset pause flag
@@ -2476,37 +2573,52 @@ class SpaceTetrisShooter extends Phaser.Scene {
         // Update gamepad state
         this.gamepadManager.update();
 
-        // Handle navigation
-        if (this.isMenuNavigationPressed('left')) {
+        // Check if stick is being held (for proper stick navigation timing)
+        const stick = this.gamepadManager.getLeftStick(0);
+        const stickThreshold = 0.7;
+        const currentStickHeld = Math.abs(stick.x) > stickThreshold || Math.abs(stick.y) > stickThreshold;
+
+        // Update stick held state
+        if (!currentStickHeld && this.stickHeld) {
+            this.stickHeld = false;
+        }
+
+        // Handle navigation - support both left/right and up/down
+        const navigateLeft = this.isMenuNavigationPressed('left');
+        const navigateRight = this.isMenuNavigationPressed('right');
+        const navigateUp = this.isMenuNavigationPressed('up');
+        const navigateDown = this.isMenuNavigationPressed('down');
+
+        if (navigateLeft || navigateUp) {
             if (this.upgradeSelectedIndex > 0) {
                 this.upgradeSelectedIndex--;
             } else {
                 this.upgradeSelectedIndex = this.upgradeOptions.length - 1; // Wrap to continue button
             }
             this.updateUpgradeSelection();
-        } else if (this.isMenuNavigationPressed('right')) {
+            if (currentStickHeld) this.stickHeld = true;
+        } else if (navigateRight || navigateDown) {
             if (this.upgradeSelectedIndex < this.upgradeOptions.length - 1) {
                 this.upgradeSelectedIndex++;
             } else {
                 this.upgradeSelectedIndex = 0; // Wrap to first option
             }
             this.updateUpgradeSelection();
+            if (currentStickHeld) this.stickHeld = true;
         }
 
-        // Handle selection
-        if (this.isMenuNavigationPressed('select')) {
+        // Handle selection - A button or Start button
+        if (this.isMenuNavigationPressed('select') || this.isMenuNavigationPressed('start')) {
             if (this.upgradeSelectedIndex === this.upgradeOptions.length - 1) {
-                // Selected continue button
-                const rewardUIElements = []; // You'll need to pass this properly
-                this.exitUpgradeScreen(rewardUIElements);
+                // Selected continue button - use stored UI elements
+                this.exitUpgradeScreen(this.currentUpgradeUIElements || []);
             } else {
                 // Selected upgrade option
                 this.selectUpgradeOption(this.upgradeSelectedIndex);
             }
         } else if (this.isMenuNavigationPressed('back')) {
             // Back button exits upgrade screen
-            const rewardUIElements = [];
-            this.exitUpgradeScreen(rewardUIElements);
+            this.exitUpgradeScreen(this.currentUpgradeUIElements || []);
         }
     }
     // Unified input methods that check both keyboard and gamepad
@@ -2539,28 +2651,37 @@ class SpaceTetrisShooter extends Phaser.Scene {
     }
 
     isMenuNavigationPressed(direction) {
-        const gamepadIndex = 0; // Use first controller for menu navigation
-        const stick = this.gamepadManager.getLeftStick(gamepadIndex);
+        // Separate checks for each controller to avoid logic conflicts
+        const checkController = (gamepadIndex) => {
+            if (!this.gamepadManager.isConnected(gamepadIndex)) return false;
 
-        switch(direction) {
-            case 'up':
-                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_UP) ||
-                       (stick.y < -0.7 && !this.stickHeld);
-            case 'down':
-                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_DOWN) ||
-                       (stick.y > 0.7 && !this.stickHeld);
-            case 'left':
-                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_LEFT) ||
-                       (stick.x < -0.7 && !this.stickHeld);
-            case 'right':
-                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_RIGHT) ||
-                       (stick.x > 0.7 && !this.stickHeld);
-            case 'select':
-                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.A);
-            case 'back':
-                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.B);
-        }
-        return false;
+            const stick = this.gamepadManager.getLeftStick(gamepadIndex);
+
+            switch(direction) {
+                case 'up':
+                    return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_UP) ||
+                           (stick.y < -0.7 && !this.stickHeld);
+                case 'down':
+                    return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_DOWN) ||
+                           (stick.y > 0.7 && !this.stickHeld);
+                case 'left':
+                    return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_LEFT) ||
+                           (stick.x < -0.7 && !this.stickHeld);
+                case 'right':
+                    return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_RIGHT) ||
+                           (stick.x > 0.7 && !this.stickHeld);
+                case 'select':
+                    return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.A);
+                case 'start':
+                    return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.START);
+                case 'back':
+                    return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.B);
+            }
+            return false;
+        };
+
+        // Only P1 controller can navigate menus to prevent conflicts
+        return checkController(0);
     }
 
     jumpToStage(stageNumber) {
