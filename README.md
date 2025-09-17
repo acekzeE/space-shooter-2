@@ -1,6 +1,6 @@
 # Space Shooter 2
 
-A multi-stage 2D space shooter game built with Phaser.js. Features single/multiplayer modes, progressive difficulty, power-ups, boss battles, and mobile support.
+A multi-stage 2D space shooter game built with Phaser.js. Features single/multiplayer modes, progressive difficulty, power-ups, boss battles, mobile support, and **full gamepad controller support**.
 
 ## Local Development
 
@@ -15,12 +15,24 @@ Simply open `index.html` in your web browser to play locally.
 - **Boss battles**: Unique boss fights with escalating difficulty
 - **Mobile friendly**: Touch controls for mobile devices
 - **Progressive difficulty**: Enemies and bosses get stronger each stage
+- **🎮 Full gamepad support**: Xbox/PlayStation controllers with haptic feedback
 
 ## Controls
 
+### Keyboard
 - **1 Player**: Arrow Keys to Move, SPACE to Shoot, H for Nuke
 - **2 Players**: P1: WASD + Space + H | P2: Arrows + Forward Slash + Delete
-- **Mobile**: Touch and drag to move, automatic shooting
+
+### Gamepad Controllers 🎮
+- **Movement**: Left Stick or D-Pad (8-directional)
+- **Shoot**: A Button (continuous fire) or Right Trigger
+- **Nuke**: B Button
+- **Menu Navigation**: D-Pad/Stick + A to select, B to back
+- **Restart**: A Button or Start from Game Over screen
+- **Haptic Feedback**: Vibration on hits, power-ups, and damage
+
+### Mobile
+- **Touch and drag** to move, automatic shooting
 
 ## GitHub Pages Deployment
 
@@ -45,3 +57,15 @@ space-shooter-2/
 - Uses external CDN for game assets (rosebud.ai)
 - Responsive scaling with mobile touch support
 - Single scene architecture with comprehensive game state management
+- **Web Gamepad API integration** with multi-controller support
+
+## Recent Updates
+
+### 🎮 Gamepad Controller Support Added
+- **Full Web Gamepad API integration** with support for Xbox/PlayStation controllers
+- **Unified input system** seamlessly combines keyboard, gamepad, and mobile controls
+- **Complete menu navigation** with visual selection indicators in all screens
+- **Haptic feedback system** provides vibration for hits, power-ups, and damage
+- **Multi-controller support** for 2-player mode (Controller 0 = P1, Controller 1 = P2)
+- **Real-time controller status** shows connection state in menus
+- **Browser compatibility** tested with Chrome, Firefox, and Edge

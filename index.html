@@ -7,61 +7,23 @@
     <style>
         body {
             margin: 0;
-            padding: 20px;
+            padding: 0;
             background-color: #000;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            font-family: Arial, sans-serif;
-        }
-
-        #game-container {
-            text-align: center;
         }
 
         canvas {
-            border: 2px solid #333;
             display: block;
-            margin: 0 auto;
-        }
-
-        .game-info {
-            color: white;
-            margin-bottom: 10px;
-        }
-
-        .controls {
-            color: #ccc;
-            margin-top: 10px;
-            font-size: 14px;
-            max-width: 804px;
-            text-align: left;
         }
     </style>
 </head>
 <body>
-    <div id="game-container">
-        <div class="game-info">
-            <h1 style="color: white; margin: 0 0 20px 0;">Space Shooter 2</h1>
-        </div>
+    <div id="renderDiv"></div>
 
-        <div id="renderDiv"></div>
-
-        <div class="controls">
-            <h3>Controls:</h3>
-            <p><strong>1 Player:</strong> Arrow Keys to Move, SPACE to Shoot, H for Nuke</p>
-            <p><strong>2 Players:</strong> P1: WASD + Space + H | P2: Arrows + Forward Slash + Delete</p>
-            <p><strong>Mobile:</strong> Touch and drag to move, automatic shooting</p>
-        </div>
-    </div>
-
-    <!-- Phaser.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
-
-    <!-- Game Scene -->
     <script src="main.js"></script>
-
-    <!-- Game initialization is handled in main.js -->
 </body>
 </html>

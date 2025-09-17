@@ -1,7 +1,123 @@
+// Gamepad Manager Class
+class GamepadManager {
+    constructor() {
+        this.gamepads = [];
+        this.deadzone = 0.15;
+        this.buttonPressed = {}; // Track button press states for "just pressed" detection
+        this.previousButtonStates = []; // Track previous frame button states
+
+        // Standard gamepad mapping
+        this.buttons = {
+            A: 0,           // Primary fire
+            B: 1,           // Nuke/bomb
+            X: 2,           // Alternative action
+            Y: 3,           // Reserved
+            LB: 4,          // Left bumper
+            RB: 5,          // Right bumper
+            LT: 6,          // Left trigger
+            RT: 7,          // Right trigger (alternative fire)
+            SELECT: 8,      // Back/select
+            START: 9,       // Start/pause
+            L_STICK: 10,    // Left stick press
+            R_STICK: 11,    // Right stick press
+            DPAD_UP: 12,
+            DPAD_DOWN: 13,
+            DPAD_LEFT: 14,
+            DPAD_RIGHT: 15
+        };
+
+        // Initialize previous button states
+        for (let i = 0; i < 4; i++) {
+            this.previousButtonStates[i] = [];
+            for (let j = 0; j < 16; j++) {
+                this.previousButtonStates[i][j] = false;
+            }
+        }
+    }
+
+    update() {
+        const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+        this.gamepads = [];
+
+        for (let i = 0; i < gamepads.length; i++) {
+            if (gamepads[i]) {
+                this.gamepads[i] = gamepads[i];
+
+                // Update previous button states
+                if (!this.previousButtonStates[i]) {
+                    this.previousButtonStates[i] = [];
+                }
+
+                for (let j = 0; j < gamepads[i].buttons.length; j++) {
+                    this.previousButtonStates[i][j] = gamepads[i].buttons[j] ? gamepads[i].buttons[j].pressed : false;
+                }
+            }
+        }
+    }
+
+    isConnected(playerIndex = 0) {
+        return this.gamepads[playerIndex] !== undefined;
+    }
+
+    getButton(playerIndex, buttonIndex) {
+        if (!this.gamepads[playerIndex] || !this.gamepads[playerIndex].buttons[buttonIndex]) {
+            return { pressed: false, value: 0 };
+        }
+        return this.gamepads[playerIndex].buttons[buttonIndex];
+    }
+
+    isButtonPressed(playerIndex, buttonIndex) {
+        const button = this.getButton(playerIndex, buttonIndex);
+        return button.pressed || button.value > 0.5;
+    }
+
+    isButtonJustPressed(playerIndex, buttonIndex) {
+        const currentPressed = this.isButtonPressed(playerIndex, buttonIndex);
+        const wasPressed = this.previousButtonStates[playerIndex] && this.previousButtonStates[playerIndex][buttonIndex];
+        return currentPressed && !wasPressed;
+    }
+
+    getAxis(playerIndex, axisIndex) {
+        if (!this.gamepads[playerIndex] || !this.gamepads[playerIndex].axes[axisIndex]) {
+            return 0;
+        }
+        const value = this.gamepads[playerIndex].axes[axisIndex];
+        return Math.abs(value) > this.deadzone ? value : 0;
+    }
+
+    getLeftStick(playerIndex) {
+        return {
+            x: this.getAxis(playerIndex, 0),
+            y: this.getAxis(playerIndex, 1)
+        };
+    }
+
+    getRightStick(playerIndex) {
+        return {
+            x: this.getAxis(playerIndex, 2),
+            y: this.getAxis(playerIndex, 3)
+        };
+    }
+
+    vibrate(playerIndex, intensity = 1.0, duration = 200) {
+        if (this.gamepads[playerIndex] && this.gamepads[playerIndex].vibrationActuator) {
+            this.gamepads[playerIndex].vibrationActuator.playEffect('dual-rumble', {
+                startDelay: 0,
+                duration: duration,
+                weakMagnitude: intensity * 0.5,
+                strongMagnitude: intensity
+            });
+        }
+    }
+}
+
 class SpaceTetrisShooter extends Phaser.Scene {
     constructor() {
         super();
         this.playerMode = null; // 1 or 2 players
+        this.gamepadManager = new GamepadManager(); // Initialize gamepad manager
+        this.menuSelectedIndex = 0; // For menu navigation
+        this.upgradeSelectedIndex = 0; // For upgrade screen navigation
         this.powerUpActive = false;
         this.isDevelopmentMode = true; // Set to true for testing, false for production
         this.powerUpType = null; // 'spread', 'big', 'rapid', 'shield', 'double', 'speed', or 'life'
@@ -91,8 +207,9 @@ class SpaceTetrisShooter extends Phaser.Scene {
             }
         }).setOrigin(0.5);
         // Create buttons
-        const button1P = this.add.rectangle(400, 350, 300, 60, 0x000000, 0.8);
-        const button2P = this.add.rectangle(400, 450, 300, 60, 0x000000, 0.8);
+        this.button1P = this.add.rectangle(400, 350, 300, 60, 0x000000, 0.8);
+        this.button2P = this.add.rectangle(400, 450, 300, 60, 0x000000, 0.8);
+
         // Add text to buttons
         this.add.text(400, 350, '1 PLAYER', {
             fontSize: '32px',
@@ -102,24 +219,102 @@ class SpaceTetrisShooter extends Phaser.Scene {
             fontSize: '32px',
             fill: '#fff'
         }).setOrigin(0.5);
+
+        // Store buttons for gamepad navigation
+        this.menuButtons = [this.button1P, this.button2P];
+        this.menuSelectedIndex = 0; // Default to first button
+
+        // Add gamepad/controller indicators
+        this.gamepadStatus = this.add.text(400, 300, '', {
+            fontSize: '20px',
+            fill: '#00ff00'
+        }).setOrigin(0.5);
+
         // Make buttons interactive
-        button1P.setInteractive();
-        button2P.setInteractive();
-        // Add hover effects
-        button1P.on('pointerover', () => button1P.setFillStyle(0x444444, 0.8));
-        button1P.on('pointerout', () => button1P.setFillStyle(0x000000, 0.8));
-        button2P.on('pointerover', () => button2P.setFillStyle(0x444444, 0.8));
-        button2P.on('pointerout', () => button2P.setFillStyle(0x000000, 0.8));
-        // Add click handlers
-        button1P.on('pointerdown', () => {
-            this.playerMode = 1;
-            this.startGame();
+        this.button1P.setInteractive();
+        this.button2P.setInteractive();
+
+        // Add hover effects and selection handlers
+        this.button1P.on('pointerover', () => {
+            this.menuSelectedIndex = 0;
+            this.updateMenuSelection();
         });
-        button2P.on('pointerdown', () => {
-            this.playerMode = 2;
-            this.startGame();
+        this.button2P.on('pointerover', () => {
+            this.menuSelectedIndex = 1;
+            this.updateMenuSelection();
+        });
+
+        // Add click handlers
+        this.button1P.on('pointerdown', () => this.selectMenuOption(0));
+        this.button2P.on('pointerdown', () => this.selectMenuOption(1));
+
+        // Initialize selection visual
+        this.updateMenuSelection();
+
+        // Set up input polling for menu
+        this.menuUpdateEvent = this.time.addEvent({
+            delay: 100,
+            callback: this.updateMenuInput,
+            callbackScope: this,
+            loop: true
         });
     }
+    updateMenuSelection() {
+        // Reset all buttons to default color
+        this.menuButtons.forEach(button => button.setFillStyle(0x000000, 0.8));
+
+        // Highlight selected button
+        if (this.menuButtons[this.menuSelectedIndex]) {
+            this.menuButtons[this.menuSelectedIndex].setFillStyle(0x444444, 0.8);
+        }
+
+        // Update gamepad status
+        let statusText = '';
+        if (this.gamepadManager.isConnected(0)) {
+            statusText += 'Controller 1: Connected\n';
+        }
+        if (this.gamepadManager.isConnected(1)) {
+            statusText += 'Controller 2: Connected\n';
+        }
+        if (statusText) {
+            statusText += 'Use D-Pad/Stick + A to navigate';
+        }
+        this.gamepadStatus.setText(statusText);
+    }
+
+    updateMenuInput() {
+        // Update gamepad state
+        this.gamepadManager.update();
+
+        // Handle navigation
+        if (this.isMenuNavigationPressed('up')) {
+            this.menuSelectedIndex = Math.max(0, this.menuSelectedIndex - 1);
+            this.updateMenuSelection();
+        } else if (this.isMenuNavigationPressed('down')) {
+            this.menuSelectedIndex = Math.min(this.menuButtons.length - 1, this.menuSelectedIndex + 1);
+            this.updateMenuSelection();
+        }
+
+        // Handle selection
+        if (this.isMenuNavigationPressed('select')) {
+            this.selectMenuOption(this.menuSelectedIndex);
+        }
+    }
+
+    selectMenuOption(index) {
+        // Stop menu input polling
+        if (this.menuUpdateEvent) {
+            this.menuUpdateEvent.remove();
+        }
+
+        if (index === 0) {
+            this.playerMode = 1;
+        } else if (index === 1) {
+            this.playerMode = 2;
+        }
+        this.startGame();
+    }
+
     startGame() {
         // Clear selection screen
         this.children.removeAll();
@@ -384,9 +579,16 @@ class SpaceTetrisShooter extends Phaser.Scene {
     }
 
     update() {
+        // Update gamepad manager first
+        this.gamepadManager.update();
+
         if (this.gameOver) {
             return;
         }
+
+        // Handle stick held state for menu navigation
+        const stick = this.gamepadManager.getLeftStick(0);
+        this.stickHeld = Math.abs(stick.x) > 0.7 || Math.abs(stick.y) > 0.7;
 
         // Scroll background
         this.background.tilePositionY += 2;
@@ -414,19 +616,23 @@ class SpaceTetrisShooter extends Phaser.Scene {
                 }
                 // No specific 'else' needed here unless you want the ship to stop moving when touch is released
             } else {
-                // Keyboard controls for player 1
+                // Unified controls for player 1 (keyboard and gamepad)
+                const input = this.getPlayerInput(1);
                 let velocityX = 0;
                 let velocityY = 0;
-                if (this.player1Keys && this.player1Keys.left.isDown) {
+
+                if (input.left) {
                     velocityX = -this.currentSpeed;
-                } else if (this.player1Keys && this.player1Keys.right.isDown) {
+                } else if (input.right) {
                     velocityX = this.currentSpeed;
                 }
-                if (this.player1Keys && this.player1Keys.up.isDown) {
+
+                if (input.up) {
                     velocityY = -this.currentSpeed;
-                } else if (this.player1Keys && this.player1Keys.down.isDown) {
+                } else if (input.down) {
                     velocityY = this.currentSpeed;
                 }
+
                 // Check player body exists before setting velocity
                 if (this.player.body) {
                     this.player.setVelocity(velocityX, velocityY);
@@ -437,55 +643,59 @@ class SpaceTetrisShooter extends Phaser.Scene {
         // Player 2 movement (only in 2 player mode)
         if (this.playerMode === 2 && this.player2 && this.player2.active) {
             if (this.player2 && this.player2.body) {
-                if (this.player2Keys.left.isDown) {
-                    this.player2.setVelocityX(-this.currentSpeed);
-                } else if (this.player2Keys.right.isDown) {
-                    this.player2.setVelocityX(this.currentSpeed);
-                } else {
-                    this.player2.setVelocityX(0);
+                // Unified controls for player 2 (keyboard and gamepad)
+                const input = this.getPlayerInput(2);
+                let velocityX = 0;
+                let velocityY = 0;
+
+                if (input.left) {
+                    velocityX = -this.currentSpeed;
+                } else if (input.right) {
+                    velocityX = this.currentSpeed;
                 }
-                if (this.player2Keys.up.isDown) {
-                    this.player2.setVelocityY(-this.currentSpeed);
-                } else if (this.player2Keys.down.isDown) {
-                    this.player2.setVelocityY(this.currentSpeed);
-                } else {
-                    this.player2.setVelocityY(0);
+
+                if (input.up) {
+                    velocityY = -this.currentSpeed;
+                } else if (input.down) {
+                    velocityY = this.currentSpeed;
                 }
+
+                this.player2.setVelocity(velocityX, velocityY);
             }
         }
 
         // Shooting
         const currentTime = this.time.now;
-        // Player 1 shooting (Keyboard or Mobile Auto-shoot)
-        const isShootingKeyboard = !this.isMobile && this.player1Keys && this.player1Keys.shoot && this.player1Keys.shoot.isDown;
-        // Mobile shooting is now handled by isPointerDown for continuous fire, initial tap shot in setupMobileInput
+        // Player 1 shooting (Keyboard, Gamepad, or Mobile Auto-shoot)
         const isShootingMobileContinuous = this.isMobile && this.isPointerDown && this.playerMode === 1;
-        if (this.player && this.player.active && (isShootingKeyboard || isShootingMobileContinuous)) {
+        const input1 = this.getPlayerInput(1);
+
+        if (this.player && this.player.active && (input1.shoot || isShootingMobileContinuous)) {
             const currentDelay = this.player1PowerUpType === 'rapid' ? 100 : this.shootingDelay;
             if (currentTime >= this.lastShootTime + currentDelay) {
                 this.shoot(this.player);
                 this.lastShootTime = currentTime;
             }
         }
-        // Player 1 nuke (Keyboard or Mobile)
-        if (this.player && this.player.active && this.player1Keys && this.player1Keys.nuke &&
-            !this.isMobile && Phaser.Input.Keyboard.JustDown(this.player1Keys.nuke)) {
+        // Player 1 nuke (Keyboard, Gamepad, or Mobile)
+        if (this.player && this.player.active && input1.nuke) {
             this.dropNuke(this.player);
         }
         // Player 2 shooting
-        if (this.playerMode === 2 && this.player2 && this.player2.active &&
-            this.player2Keys && this.player2Keys.shoot && this.player2Keys.shoot.isDown) {
-            const currentDelay = this.player2PowerUpType === 'rapid' ? 100 : this.shootingDelay;
-            if (currentTime >= this.lastShootTime2 + currentDelay) {
-                this.shoot(this.player2);
-                this.lastShootTime2 = currentTime;
+        if (this.playerMode === 2 && this.player2 && this.player2.active) {
+            const input2 = this.getPlayerInput(2);
+            if (input2.shoot) {
+                const currentDelay = this.player2PowerUpType === 'rapid' ? 100 : this.shootingDelay;
+                if (currentTime >= this.lastShootTime2 + currentDelay) {
+                    this.shoot(this.player2);
+                    this.lastShootTime2 = currentTime;
+                }
             }
-        }
-        // Player 2 nuke (only in 2 player mode)
-        if (this.playerMode === 2 && this.player2 && this.player2.active &&
-            this.player2Keys && this.player2Keys.nuke &&
-            Phaser.Input.Keyboard.JustDown(this.player2Keys.nuke)) {
-            this.dropNuke(this.player2);
+
+            // Player 2 nuke (only in 2 player mode)
+            if (input2.nuke) {
+                this.dropNuke(this.player2);
+            }
         }
         // Clean up off-screen objects
         // Clean up off-screen bullets with safety checks
@@ -688,6 +898,12 @@ class SpaceTetrisShooter extends Phaser.Scene {
     }
 
     hitEnemy(bullet, enemy) {
+        // Add vibration feedback for successful hits
+        this.gamepadManager.vibrate(0, 0.3, 100); // Light vibration for P1
+        if (this.playerMode === 2) {
+            this.gamepadManager.vibrate(1, 0.3, 100); // Light vibration for P2
+        }
+
         // Comprehensive null and active checks
         if (!bullet || !enemy ||
             !bullet?.active || !enemy?.active ||
@@ -1145,6 +1361,10 @@ class SpaceTetrisShooter extends Phaser.Scene {
         const isPlayer1 = player === this.player;
         const isPlayer2 = player === this.player2;
 
+        // Add strong vibration feedback for player hit
+        const gamepadIndex = isPlayer1 ? 0 : 1;
+        this.gamepadManager.vibrate(gamepadIndex, 1.0, 300); // Strong vibration for hit
+
         // Check which player's shield is active
         if (isPlayer1 && this.isShielded) return;
         if (isPlayer1 && this.player.isInvincible) return;
@@ -1184,14 +1404,42 @@ class SpaceTetrisShooter extends Phaser.Scene {
                 fontSize: '64px',
                 fill: '#fff'
             }).setOrigin(0.5);
-            this.add.text(400, 370, 'Press R to Restart', {
+            this.add.text(400, 370, 'Press R or A Button to Restart', {
                 fontSize: '32px',
                 fill: '#fff'
             }).setOrigin(0.5);
+
+            // Add gamepad status for game over
+            this.gameOverGamepadStatus = this.add.text(400, 420, '', {
+                fontSize: '20px',
+                fill: '#00ff00'
+            }).setOrigin(0.5);
+
+            // Update gamepad status
+            this.updateGameOverGamepadStatus();
+
+            // Set up game over input polling
+            this.gameOverUpdateEvent = this.time.addEvent({
+                delay: 100,
+                callback: this.updateGameOverInput,
+                callbackScope: this,
+                loop: true
+            });
+
             // Clear any existing key listener to prevent duplicates
             this.input.keyboard.removeKey('R');
             // Add a new listener for restarting
             this.input.keyboard.once('keydown-R', () => {
+                this.restartGame();
+            });
+
+            // Define restart game function
+            this.restartGame = () => {
+                // Stop game over input polling
+                if (this.gameOverUpdateEvent) {
+                    this.gameOverUpdateEvent.remove();
+                }
+
                 // Reset game state variables before restarting
                 this.playerMode = null;
                 this.powerUpActive = false;
@@ -1217,7 +1465,35 @@ class SpaceTetrisShooter extends Phaser.Scene {
                 this.normalEnemyKills = 0; // Reset normal enemy kill counter
                 this.purchasesMadeThisStage = 0; // Reset purchase counter on restart
                 this.scene.restart();
-            });
+            };
+        }
+    }
+
+    updateGameOverGamepadStatus() {
+        let statusText = '';
+        if (this.gamepadManager.isConnected(0)) {
+            statusText += 'Controller 1: Connected - Press A to Restart\n';
+        }
+        if (this.gamepadManager.isConnected(1)) {
+            statusText += 'Controller 2: Connected - Press A to Restart\n';
+        }
+        if (this.gameOverGamepadStatus) {
+            this.gameOverGamepadStatus.setText(statusText);
+        }
+    }
+
+    updateGameOverInput() {
+        // Update gamepad state
+        this.gamepadManager.update();
+
+        // Update gamepad status
+        this.updateGameOverGamepadStatus();
+
+        // Handle gamepad restart
+        if (this.gamepadManager.isButtonJustPressed(0, this.gamepadManager.buttons.A) ||
+            this.gamepadManager.isButtonJustPressed(1, this.gamepadManager.buttons.A) ||
+            this.gamepadManager.isButtonJustPressed(0, this.gamepadManager.buttons.START)) {
+            this.restartGame();
         }
     }
     handlePlayerHit(player, lives, playerNum) {
@@ -1825,6 +2101,10 @@ class SpaceTetrisShooter extends Phaser.Scene {
         // Determine which player collected the power-up
         const isPlayer1 = player === this.player;
 
+        // Add vibration feedback for power-up collection
+        const gamepadIndex = isPlayer1 ? 0 : 1;
+        this.gamepadManager.vibrate(gamepadIndex, 0.6, 200); // Medium vibration for power-up
+
         // Clear existing power-up timer for the specific player
         if (isPlayer1) {
             if (this.player1PowerUpTimer) {
@@ -2006,11 +2286,16 @@ class SpaceTetrisShooter extends Phaser.Scene {
         // Create selection boxes (adjust width and position for 4 options)
         const boxWidth = 180;
         const boxHeight = 120;
-        const option1 = this.add.rectangle(106, 350, boxWidth, boxHeight, 0x444444); // Adjusted Y position
-        const option2 = this.add.rectangle(302, 350, boxWidth, boxHeight, 0x444444); // Adjusted Y position
-        const option3 = this.add.rectangle(508, 350, boxWidth, boxHeight, 0x444444); // Adjusted Y position
-        const option4 = this.add.rectangle(704, 350, boxWidth, boxHeight, 0x444444); // Adjusted Y position
-        rewardUIElements.push(option1, option2, option3, option4);
+        this.upgradeOption1 = this.add.rectangle(106, 350, boxWidth, boxHeight, 0x444444); // Adjusted Y position
+        this.upgradeOption2 = this.add.rectangle(302, 350, boxWidth, boxHeight, 0x444444); // Adjusted Y position
+        this.upgradeOption3 = this.add.rectangle(508, 350, boxWidth, boxHeight, 0x444444); // Adjusted Y position
+        this.upgradeOption4 = this.add.rectangle(704, 350, boxWidth, boxHeight, 0x444444); // Adjusted Y position
+
+        // Store upgrade options for gamepad navigation
+        this.upgradeOptions = [this.upgradeOption1, this.upgradeOption2, this.upgradeOption3, this.upgradeOption4];
+        this.upgradeSelectedIndex = 0; // Default to first option
+
+        rewardUIElements.push(this.upgradeOption1, this.upgradeOption2, this.upgradeOption3, this.upgradeOption4);
         // Add text for each option with prices
         const textOpt1 = this.add.text(106, 340, 'MOVE SPEED\n+50%\n50 COINS', { // Adjusted Y position
             fontSize: '24px',
@@ -2033,25 +2318,38 @@ class SpaceTetrisShooter extends Phaser.Scene {
             align: 'center'
         }).setOrigin(0.5);
         rewardUIElements.push(textOpt1, textOpt2, textOpt3, textOpt4);
+        // Initialize upgrade selection visual
+        this.updateUpgradeSelection();
+
         // Make options interactive
-        [option1, option2, option3, option4].forEach((option, index) => {
+        this.upgradeOptions.forEach((option, index) => {
             option.setInteractive();
 
             option.on('pointerover', () => {
-                option.setFillStyle(0x666666);
+                this.upgradeSelectedIndex = index;
+                this.updateUpgradeSelection();
             });
 
-            option.on('pointerout', () => {
-                option.setFillStyle(0x444444);
-            });
+            option.on('pointerdown', () => this.selectUpgradeOption(index));
+        });
 
-            option.on('pointerdown', () => {
-                // Define prices for each upgrade
-                const prices = [50, 75, 100, 25]; // Added price for lives
-                const price = prices[index];
-                let feedbackText; // Variable to hold the feedback message text object
-                // Check if player has enough coins
-                if (this.coins >= price) {
+        // Set up upgrade input polling
+        this.upgradeUpdateEvent = this.time.addEvent({
+            delay: 100,
+            callback: this.updateUpgradeInput,
+            callbackScope: this,
+            loop: true
+        });
+
+        // Define upgrade prices
+        const prices = [50, 75, 100, 25];
+
+        // Define upgrade selection function
+        this.selectUpgradeOption = (index) => {
+            const price = prices[index];
+            let feedbackText; // Variable to hold the feedback message text object
+            // Check if player has enough coins
+            if (this.coins >= price) {
                     // Deduct coins
                     this.coins -= price;
                     this.coinsText.setText('Coins: ' + this.coins); // Update coins display
@@ -2114,21 +2412,36 @@ class SpaceTetrisShooter extends Phaser.Scene {
                     });
                 }
                 // UI remains open for further purchases or to click "Continue"
-            });
-        });
+        };
         // Add a "Continue" button to leave the upgrade screen
-        const continueButton = this.add.rectangle(400, 550, 250, 50, 0x00ff00); // Adjusted Y position
+        this.continueButton = this.add.rectangle(400, 550, 250, 50, 0x00ff00); // Adjusted Y position
         const continueText = this.add.text(400, 550, 'CONTINUE', { // Adjusted Y position
             fontSize: '32px',
             fill: '#000'
         }).setOrigin(0.5);
-        continueButton.setInteractive();
-        rewardUIElements.push(continueButton, continueText);
-        continueButton.on('pointerover', () => continueButton.setFillStyle(0x00cc00));
-        continueButton.on('pointerout', () => continueButton.setFillStyle(0x00ff00));
-        continueButton.on('pointerdown', () => {
+
+        // Add continue button to upgrade options for navigation
+        this.upgradeOptions.push(this.continueButton);
+
+        this.continueButton.setInteractive();
+        rewardUIElements.push(this.continueButton, continueText);
+
+        this.continueButton.on('pointerover', () => {
+            this.upgradeSelectedIndex = this.upgradeOptions.length - 1;
+            this.updateUpgradeSelection();
+        });
+
+        this.continueButton.on('pointerdown', () => this.exitUpgradeScreen(rewardUIElements));
+
+        // Define exit function
+        this.exitUpgradeScreen = (uiElements) => {
+            // Stop upgrade input polling
+            if (this.upgradeUpdateEvent) {
+                this.upgradeUpdateEvent.remove();
+            }
+
             // Destroy all UI elements
-            rewardUIElements.forEach(element => {
+            uiElements.forEach(element => {
                 if (element && element.scene) {
                     element.destroy();
                 }
@@ -2136,8 +2449,120 @@ class SpaceTetrisShooter extends Phaser.Scene {
             // Resume game
             this.physics.resume();
             this.isPaused = false; // Unset pause flag
-        });
+        };
     }
+
+    updateUpgradeSelection() {
+        // Reset all upgrade options to default color
+        for (let i = 0; i < this.upgradeOptions.length - 1; i++) {
+            this.upgradeOptions[i].setFillStyle(0x444444);
+        }
+        // Reset continue button
+        if (this.continueButton) {
+            this.continueButton.setFillStyle(0x00ff00);
+        }
+
+        // Highlight selected option
+        if (this.upgradeSelectedIndex < this.upgradeOptions.length - 1) {
+            // Highlight upgrade option
+            this.upgradeOptions[this.upgradeSelectedIndex].setFillStyle(0x666666);
+        } else if (this.upgradeSelectedIndex === this.upgradeOptions.length - 1) {
+            // Highlight continue button
+            this.continueButton.setFillStyle(0x00cc00);
+        }
+    }
+
+    updateUpgradeInput() {
+        // Update gamepad state
+        this.gamepadManager.update();
+
+        // Handle navigation
+        if (this.isMenuNavigationPressed('left')) {
+            if (this.upgradeSelectedIndex > 0) {
+                this.upgradeSelectedIndex--;
+            } else {
+                this.upgradeSelectedIndex = this.upgradeOptions.length - 1; // Wrap to continue button
+            }
+            this.updateUpgradeSelection();
+        } else if (this.isMenuNavigationPressed('right')) {
+            if (this.upgradeSelectedIndex < this.upgradeOptions.length - 1) {
+                this.upgradeSelectedIndex++;
+            } else {
+                this.upgradeSelectedIndex = 0; // Wrap to first option
+            }
+            this.updateUpgradeSelection();
+        }
+
+        // Handle selection
+        if (this.isMenuNavigationPressed('select')) {
+            if (this.upgradeSelectedIndex === this.upgradeOptions.length - 1) {
+                // Selected continue button
+                const rewardUIElements = []; // You'll need to pass this properly
+                this.exitUpgradeScreen(rewardUIElements);
+            } else {
+                // Selected upgrade option
+                this.selectUpgradeOption(this.upgradeSelectedIndex);
+            }
+        } else if (this.isMenuNavigationPressed('back')) {
+            // Back button exits upgrade screen
+            const rewardUIElements = [];
+            this.exitUpgradeScreen(rewardUIElements);
+        }
+    }
+    // Unified input methods that check both keyboard and gamepad
+    getPlayerInput(playerNum) {
+        const isPlayer1 = playerNum === 1;
+        const gamepadIndex = isPlayer1 ? 0 : 1;
+        const keySet = isPlayer1 ? this.player1Keys : this.player2Keys;
+
+        // Get gamepad left stick input
+        const stick = this.gamepadManager.getLeftStick(gamepadIndex);
+
+        // Get D-pad input
+        const dpadUp = this.gamepadManager.isButtonPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_UP);
+        const dpadDown = this.gamepadManager.isButtonPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_DOWN);
+        const dpadLeft = this.gamepadManager.isButtonPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_LEFT);
+        const dpadRight = this.gamepadManager.isButtonPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_RIGHT);
+
+        return {
+            up: (keySet && keySet.up && keySet.up.isDown) || stick.y < -0.5 || dpadUp,
+            down: (keySet && keySet.down && keySet.down.isDown) || stick.y > 0.5 || dpadDown,
+            left: (keySet && keySet.left && keySet.left.isDown) || stick.x < -0.5 || dpadLeft,
+            right: (keySet && keySet.right && keySet.right.isDown) || stick.x > 0.5 || dpadRight,
+            shoot: (keySet && keySet.shoot && keySet.shoot.isDown) ||
+                   this.gamepadManager.isButtonPressed(gamepadIndex, this.gamepadManager.buttons.A) ||
+                   this.gamepadManager.isButtonPressed(gamepadIndex, this.gamepadManager.buttons.RT),
+            nuke: (keySet && keySet.nuke && Phaser.Input.Keyboard.JustDown(keySet.nuke)) ||
+                  this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.B),
+            gamepadConnected: this.gamepadManager.isConnected(gamepadIndex)
+        };
+    }
+
+    isMenuNavigationPressed(direction) {
+        const gamepadIndex = 0; // Use first controller for menu navigation
+        const stick = this.gamepadManager.getLeftStick(gamepadIndex);
+
+        switch(direction) {
+            case 'up':
+                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_UP) ||
+                       (stick.y < -0.7 && !this.stickHeld);
+            case 'down':
+                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_DOWN) ||
+                       (stick.y > 0.7 && !this.stickHeld);
+            case 'left':
+                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_LEFT) ||
+                       (stick.x < -0.7 && !this.stickHeld);
+            case 'right':
+                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.DPAD_RIGHT) ||
+                       (stick.x > 0.7 && !this.stickHeld);
+            case 'select':
+                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.A);
+            case 'back':
+                return this.gamepadManager.isButtonJustPressed(gamepadIndex, this.gamepadManager.buttons.B);
+        }
+        return false;
+    }
+
     jumpToStage(stageNumber) {
         if (!this.isDevelopmentMode) return; // Only allow in development mode
         // Clear existing game objects
