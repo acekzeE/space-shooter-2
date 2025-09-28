@@ -116,6 +116,7 @@ class SpaceTetrisShooter extends Phaser.Scene {
     constructor() {
         super();
         this.playerMode = null; // 1 or 2 players
+        this.isEasyMode = false; // Track if Easy-2 mode is selected
         this.gamepadManager = new GamepadManager(); // Initialize gamepad manager
         this.menuSelectedIndex = 0; // For menu navigation
         this.upgradeSelectedIndex = 0; // For upgrade screen navigation
@@ -131,8 +132,8 @@ class SpaceTetrisShooter extends Phaser.Scene {
         this.doubleDamage = false; // Track double damage status
         this.baseSpeed = 300; // Base movement speed
         this.currentSpeed = 300; // Current movement speed
-        this.player1Lives = 5; // Player 1 lives
-        this.player2Lives = 5; // Player 2 lives
+        this.player1Lives = 5; // Player 1 lives (will be set to 999 in easy mode)
+        this.player2Lives = 5; // Player 2 lives (will be set to 999 in easy mode)
         this.score = 0;
         this.coins = 0; // Add coins property
         this.gameOver = false;
@@ -223,21 +224,26 @@ class SpaceTetrisShooter extends Phaser.Scene {
             }
         }).setOrigin(0.5);
         // Create buttons
-        this.button1P = this.add.rectangle(400, 350, 300, 60, 0x000000, 0.8);
-        this.button2P = this.add.rectangle(400, 450, 300, 60, 0x000000, 0.8);
+        this.button1P = this.add.rectangle(400, 320, 300, 60, 0x000000, 0.8);
+        this.button2P = this.add.rectangle(400, 400, 300, 60, 0x000000, 0.8);
+        this.buttonEasy2 = this.add.rectangle(400, 480, 300, 60, 0x000000, 0.8);
 
         // Add text to buttons
-        this.add.text(400, 350, '1 PLAYER', {
+        this.add.text(400, 320, '1 PLAYER', {
             fontSize: '32px',
             fill: '#fff'
         }).setOrigin(0.5);
-        this.add.text(400, 450, '2 PLAYERS', {
+        this.add.text(400, 400, '2 PLAYERS', {
             fontSize: '32px',
+            fill: '#fff'
+        }).setOrigin(0.5);
+        this.add.text(400, 480, 'EASY-2 (999 LIVES)', {
+            fontSize: '28px',
             fill: '#fff'
         }).setOrigin(0.5);
 
         // Store buttons for gamepad navigation
-        this.menuButtons = [this.button1P, this.button2P];
+        this.menuButtons = [this.button1P, this.button2P, this.buttonEasy2];
         this.menuSelectedIndex = 0; // Default to first button
 
         // Add gamepad/controller indicators - P1 top left, P2 top right
@@ -267,6 +273,7 @@ class SpaceTetrisShooter extends Phaser.Scene {
         // Make buttons interactive
         this.button1P.setInteractive();
         this.button2P.setInteractive();
+        this.buttonEasy2.setInteractive();
 
         // Add hover effects and selection handlers
         this.button1P.on('pointerover', () => {
@@ -277,10 +284,15 @@ class SpaceTetrisShooter extends Phaser.Scene {
             this.menuSelectedIndex = 1;
             this.updateMenuSelection();
         });
+        this.buttonEasy2.on('pointerover', () => {
+            this.menuSelectedIndex = 2;
+            this.updateMenuSelection();
+        });
 
         // Add click handlers
         this.button1P.on('pointerdown', () => this.selectMenuOption(0));
         this.button2P.on('pointerdown', () => this.selectMenuOption(1));
+        this.buttonEasy2.on('pointerdown', () => this.selectMenuOption(2));
 
         // Initialize selection visual
         this.updateMenuSelection();
@@ -388,8 +400,13 @@ class SpaceTetrisShooter extends Phaser.Scene {
 
         if (index === 0) {
             this.playerMode = 1;
+            this.isEasyMode = false;
         } else if (index === 1) {
             this.playerMode = 2;
+            this.isEasyMode = false;
+        } else if (index === 2) {
+            this.playerMode = 2;
+            this.isEasyMode = true;
         }
         this.startGame();
     }
@@ -423,6 +440,15 @@ class SpaceTetrisShooter extends Phaser.Scene {
         this.currentSpeed = 300;
         this.player.body.setBoundsRectangle(new Phaser.Geom.Rectangle(0, 50, 800, 500));
 
+        // Set player lives based on mode
+        if (this.isEasyMode) {
+            this.player1Lives = 999;
+            this.player2Lives = 999;
+        } else {
+            this.player1Lives = 5;
+            this.player2Lives = 5;
+        }
+
         // Player 2 setup (only in 2 player mode)
         if (this.playerMode === 2) {
             this.player2 = this.physics.add.sprite(600, 550, 'player2Ship');
@@ -431,7 +457,6 @@ class SpaceTetrisShooter extends Phaser.Scene {
             this.player2.body.setBoundsRectangle(new Phaser.Geom.Rectangle(0, 50, 800, 500));
             this.player2.setTint(0x00ff00); // Green tint to distinguish from player 1
             this.player2.alpha = 0.7; // Make player 2 slightly transparent to indicate ghost mode
-            this.player2Lives = 5;
         } else {
             // In single player mode, we don't need player 2 at all
             this.player2 = null;
@@ -469,7 +494,7 @@ class SpaceTetrisShooter extends Phaser.Scene {
             fill: '#fff'
         });
         // Add lives counter for both players
-        this.livesText = this.add.text(750, 30, 'P1 Lives: 5', {
+        this.livesText = this.add.text(750, 30, 'P1 Lives: ' + this.player1Lives, {
             fontSize: '32px',
             fill: '#fff'
         }).setOrigin(1, 0);
@@ -1525,8 +1550,13 @@ class SpaceTetrisShooter extends Phaser.Scene {
                 this.doubleDamage = false;
                 this.baseSpeed = 300;
                 this.currentSpeed = 300;
-                this.player1Lives = 5;
-                this.player2Lives = 5;
+                if (this.isEasyMode) {
+                    this.player1Lives = 999;
+                    this.player2Lives = 999;
+                } else {
+                    this.player1Lives = 5;
+                    this.player2Lives = 5;
+                }
                 this.score = 0;
                 this.coins = 0;
                 this.gameOver = false;
